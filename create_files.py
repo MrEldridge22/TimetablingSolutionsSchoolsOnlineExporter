@@ -137,8 +137,6 @@ def get_enrollments(tfx_file, semester, swd=False):
 
     student_enrollments_df.drop(columns=["Sequence"], axis=1, inplace=True)
 
-    print(student_enrollments_df)
-
     return student_enrollments_df
 
 
@@ -171,7 +169,6 @@ def organise_teachers_df(df):
     organised_df["Date of Birth"] = ""
     organised_df["Gender"] = ""
 
-    # print(organised_df)
     return organised_df
     
 
@@ -198,7 +195,7 @@ def get_teachers_dataframe(sem1_tfx, sem2_tfx):
     return teachers_df
 
 
-def organise_classes_dataframe(teacher_df, classes_tfx, semester, msswd="ms"):
+def classes_import_dataframe(teacher_df, classes_tfx, semester, msswd="ms"):
     """
     Organises the classes DataFrame by merging teacher and class information, filtering, and adding necessary columns as required for the Classes Import File for Schools Online.
 
@@ -213,20 +210,30 @@ def organise_classes_dataframe(teacher_df, classes_tfx, semester, msswd="ms"):
     classes_df = pd.json_normalize(classes_tfx, record_path="ClassNames")
     timetable_df = pd.json_normalize(classes_tfx, record_path="Timetable")
 
+    # Merge the two dataframes to from the tfx file information
     teachers_classes_df = pd.merge(teacher_df, timetable_df, how='left', on="TeacherID")
     teachers_class_details_df = pd.merge(teachers_classes_df, classes_df, how='left', on="ClassNameID")
 
     teachers_class_details_df.drop_duplicates(subset=["TeacherID", "ClassNameID"], inplace=True)
     teachers_class_details_df.dropna(subset=["SubjectCode"], inplace=True)
+
+    # Drop all non-SACE classes, BOSClassCode1 is the SACE Code, NaN are non-SACE classes
+    teachers_class_details_df.dropna(subset=["BOSClassCode1"], inplace=True)
+
+    # Filter for SWD Classes based on the msswd parameter and is BOSClassCode1 contains SWD
+    if msswd == "swd":
+        teachers_class_details_df = teachers_class_details_df[teachers_class_details_df["BOSClassCode1"].str.contains("SWD")]
+    else:
+        teachers_class_details_df = teachers_class_details_df[~teachers_class_details_df["BOSClassCode1"].str.contains("SWD")]
     
-    # print(teachers_class_details_df)
+    # Change to new Teacher Code Format
     teachers_class_details_df = update_teacher_code(teachers_class_details_df)
 
     organised_classes_df = pd.DataFrame()
     
-    organised_classes_df["Stage"] = teachers_class_details_df["SubjectCode"].str.slice(stop=1)
-    organised_classes_df["SACE Code"] = teachers_class_details_df["SubjectCode"].str.slice(start=1, stop=4)
-    organised_classes_df["Credits"] = teachers_class_details_df["SubjectCode"].str.slice(start=4, stop=6)
+    organised_classes_df["Stage"] = teachers_class_details_df["BOSClassCode1"].str.slice(stop=1)
+    organised_classes_df["SACE Code"] = teachers_class_details_df["BOSClassCode1"].str.slice(start=1, stop=4)
+    organised_classes_df["Credits"] = teachers_class_details_df["BOSClassCode1"].str.slice(start=4, stop=6)
     organised_classes_df["Class Number"] = "" # Leave blank and match up by Code Afterwards
     organised_classes_df["Program Variant"] = ""
     organised_classes_df["Semester"] = semester
@@ -249,43 +256,11 @@ def organise_classes_dataframe(teacher_df, classes_tfx, semester, msswd="ms"):
     organised_classes_df["Contact School Number"] = config.schoolNumber
     organised_classes_df["Year"] = config.year
 
-    # Move the 2 to the front
+    # Move the 2 columns to the front
     organised_classes_df.insert(0, "Contact School Number", organised_classes_df.pop("Contact School Number"))
     organised_classes_df.insert(1, "Year", organised_classes_df.pop("Year"))
 
-    # Filter only Stage 1 and 2
-    organised_classes_df = organised_classes_df[
-        organised_classes_df["Stage"].isin(["1", "2"]) &
-        (~organised_classes_df["School Class Code"].str.contains('Care', case=False))
-    ]
-
     return organised_classes_df
-
-
-def get_classes_dataframe(teachers_df, sem_tfx, semester, sace_enrollments_df, msswd="ms"):
-    """
-    Combines and organizes class data from teachers, semester information, and SACE enrollments.
-
-    Parameters:
-    teachers_df (pd.DataFrame): DataFrame containing teacher information.
-    sem_tfx (dict): The Timetable Development file (tfx)
-    semester (int): The semester number.
-    sace_enrollments_df (pd.DataFrame): DataFrame containing SACE enrollment information.
-
-    Returns:
-    pd.DataFrame: The combined and organized DataFrame with class information.
-    """
-    df = organise_classes_dataframe(teachers_df, sem_tfx, semester, msswd)
-
-    # Merge and handle column name conflicts
-    df = pd.merge(df, sace_enrollments_df[["School Class Code", "Class Number"]], on="School Class Code", how='left', suffixes=('', '_y'))
-    df["Class Number"] = df["Class Number_y"]
-    df.drop(columns="Class Number_y", axis=1, inplace=True)
-
-    df.drop_duplicates(subset=["Teacher Code", "School Class Code"], ignore_index=True, inplace=True)
-    df.dropna(subset=["Class Number"], inplace=True) # This will sort for SWD and Mainstream
-    
-    return df
 
 
 def get_only_sace_teachers(teacher_df, classes_df):
@@ -339,7 +314,6 @@ def classes_file_output(df, semester, stage, swd=False):
     Returns:
     None
     """
-
     # Code Length Check if School Class Code is greater than 10 characters
     good_codes = True
     for row in df.iterrows():
@@ -350,7 +324,7 @@ def classes_file_output(df, semester, stage, swd=False):
     if good_codes:
         print("All Class Codes are good! Clear to Upload Classes File!")
     else:
-        print("Please update class codes in update codes function before uploading!")
+        print("Please update class codes to be less than 10 characters!")
     
     # Output to CSV
     df = df[df["Stage"] == str(stage)]
@@ -379,51 +353,55 @@ with open (f"{config.filePath}{config.semester2_tfx_file}", "r") as semester2_tf
 teachers_df = get_teachers_dataframe(semester1_tfx, semester2_tfx)
 
 # Get Enrollments Dataframes
-semester1_tfx_enrollments = get_enrollments(semester1_tfx, 1) # Semester 1
-semester2_tfx_enrollments = get_enrollments(semester2_tfx, 2) # Semester 2
+semester1_enrollments = get_enrollments(semester1_tfx, 1) # Semester 1
+semester2_enrollments = get_enrollments(semester2_tfx, 2) # Semester 2
+all_enrollments = pd.concat([semester1_enrollments, semester2_enrollments])
+semester1_enrollments_swd = get_enrollments(semester1_tfx, 1, True) # Semester 1 SWD
+semester2_enrollments_swd = get_enrollments(semester2_tfx, 2, True) # Semester 2 SWD
+all_enrollments_swd = pd.concat([semester1_enrollments_swd, semester2_enrollments_swd])
 
-# # Get Mainstream Classes
-# semester1_classes_import = get_classes_dataframe(teachers_df, semester1_tfx, 1, seniors_df)
-# semester2_classes_import = get_classes_dataframe(teachers_df, semester2_tfx, 2, seniors_df)
+# Get Classes Dataframes
+semester1_classes_import = classes_import_dataframe(teachers_df, semester1_tfx, 1)
+semester2_classes_import = classes_import_dataframe(teachers_df, semester2_tfx, 2)
+classes_import = pd.concat([semester1_classes_import, semester2_classes_import])
+classes_import.drop_duplicates(subset=["Teacher Code", "School Class Code"], ignore_index=True, inplace=True)
 
-# classes_import = pd.concat([semester1_classes_import, semester2_classes_import])
-# classes_import.drop_duplicates(subset=["Teacher Code", "School Class Code"], ignore_index=True, inplace=True)
+semester1_classes_import_swd = classes_import_dataframe(teachers_df, semester1_tfx, 1, "swd")
+semester2_classes_import_swd = classes_import_dataframe(teachers_df, semester2_tfx, 2, "swd")
+classes_import_swd = pd.concat([semester1_classes_import_swd, semester2_classes_import_swd])
+classes_import_swd.drop_duplicates(subset=["Teacher Code", "School Class Code"], ignore_index=True, inplace=True)
 
-# # Get SWD Classes, have set both semesters to 1 as they generally run full year SACE subjects
-# semester1_swd_classes_import = get_classes_dataframe(teachers_df, semester1_tfx, 1, swd_df, "swd")
-# semester2_swd_classes_import = get_classes_dataframe(teachers_df, semester2_tfx, 2, swd_df, "swd")
-# swd_classes_import = pd.concat([semester1_swd_classes_import, semester2_swd_classes_import])
-# swd_classes_import.drop_duplicates(subset=["Teacher Code", "School Class Code"], ignore_index=True, inplace=True)
 
-# # Check for multiple teachers
-# duplicate_classes = check_multiple_teachers(pd.concat([classes_import, swd_classes_import]))
-# if duplicate_classes is not None:
-#     duplicate_classes.to_csv("schools_online_import_files\\Duplicate_Classes.csv", index=False)
-#     print("Duplicate Classes Found! Check Duplicate_Classes.csv for more information.")
+# Check for multiple teachers
+mutiple_teacher_check = check_multiple_teachers(pd.concat([classes_import, classes_import_swd]))
+if mutiple_teacher_check is not None:
+    mutiple_teacher_check.to_csv("schools_online_import_files\\Duplicate_Classes.csv", index=False)
+    print("Duplicate Classes Found! Check Duplicate_Classes.csv for more information. Team Teachers???")
 
-# # Get all classes for Teachers
-# all_classes = pd.concat([semester1_classes_import, semester2_classes_import, semester1_swd_classes_import, semester2_swd_classes_import])
+# Get all classes for Teachers
+all_enrollments = pd.concat([all_enrollments, all_enrollments_swd])
+all_classes = pd.concat([classes_import, classes_import_swd])
 
 # ### OUTPUT FILES ###
-# # Teachers
-# get_only_sace_teachers(teachers_df, all_classes).to_csv("schools_online_import_files\\TCHRIMP.csv", index=False)
+# Teachers
+get_only_sace_teachers(teachers_df, all_classes).to_csv("schools_online_import_files\\TeacherImport.csv", index=False)
 
-# # Classes
-# classes_file_output(classes_import[(classes_import["Semester"] == 1)], 1, "1")
-# classes_file_output(classes_import[(classes_import["Semester"] == 2)], 2, "1")
-# classes_file_output(classes_import, 1, "2")
+# Classes
+classes_file_output(classes_import[(classes_import["Semester"] == 1)], 1, "1")
+classes_file_output(classes_import[(classes_import["Semester"] == 2)], 2, "1")
+classes_file_output(classes_import, 1, "2")
 
-# classes_file_output(swd_classes_import, 1, "1", True)
-# classes_file_output(swd_classes_import, 2, "1", True)
-# classes_file_output(swd_classes_import, 1, "2", True)
+classes_file_output(classes_import_swd, 1, "1", True)
+classes_file_output(classes_import_swd, 2, "1", True)
+classes_file_output(classes_import_swd, 1, "2", True)
 
-# # Enrollments
-# seniors_df[(seniors_df["Semester"] == 1) & (seniors_df["Stage"] == 1)].to_csv('schools_online_import_files\\Stage1_S1_ENRLIMP.csv', index=False)
-# seniors_df[(seniors_df["Semester"] == 2) & (seniors_df["Stage"] == 1)].to_csv('schools_online_import_files\\Stage1_S2_ENRLIMP.csv', index=False)
+# Enrollments
+all_enrollments[(all_enrollments["Semester"] == 1) & (all_enrollments["Stage"] == 1)].to_csv('schools_online_import_files\\Stage1_S1_ENRLIMP.csv', index=False)
+all_enrollments[(all_enrollments["Semester"] == 2) & (all_enrollments["Stage"] == 1)].to_csv('schools_online_import_files\\Stage1_S2_ENRLIMP.csv', index=False)
+all_enrollments[(all_enrollments["Semester"] == 1) & (all_enrollments["Stage"] == 2)].to_csv('schools_online_import_files\\Stage2_S1_ENRLIMP.csv', index=False)
 
-# seniors_df[(seniors_df["Semester"] == 1) & (seniors_df["Stage"] == 2)].to_csv('schools_online_import_files\\Stage2_ENRLIMP.csv', index=False)
-
-# swd_df[(swd_df["Semester"] == 1) & (swd_df["Stage"] == 1)].to_csv('schools_online_import_files\\SWD_Stage1_ENRLIMP.csv', index=False)
-# swd_df[(swd_df["Semester"] == 1) & (swd_df["Stage"] == 2)].to_csv('schools_online_import_files\\SWD_Stage2_ENRLIMP.csv', index=False)
+all_enrollments_swd[(all_enrollments_swd["Semester"] == 1) & (all_enrollments_swd["Stage"] == 1)].to_csv('schools_online_import_files\\SWD_Stage1_S1_ENRLIMP.csv', index=False)
+all_enrollments_swd[(all_enrollments_swd["Semester"] == 2) & (all_enrollments_swd["Stage"] == 1)].to_csv('schools_online_import_files\\SWD_Stage1_S2_ENRLIMP.csv', index=False)
+all_enrollments_swd[(all_enrollments_swd["Semester"] == 1) & (all_enrollments_swd["Stage"] == 2)].to_csv('schools_online_import_files\\SWD_Stage2_S1_ENRLIMP.csv', index=False)
 
 print("Done!")

@@ -9,17 +9,17 @@ import sys
 year = datetime.date.today().year
 
 # School Contact Number
-schoolNumber = 245
+schoolNumber = xxx
 
 """ File Paths """
 # School
 filePath              = f"V:\\Timetabler\\Current Timetable\\{year}"
 
 # Laptop OneDrive
-main_path_laptop      = f"C:\\Users\\deldridge\\OneDrive - Department for Education\\Documents\\Timetabling\\{year}"
+main_path_laptop      = f"C:\\Users\\xxx\\OneDrive - Department for Education\\Documents\\Timetabling\\{year}"
 
 # Desktop OneDrive
-main_path_desktop     = f"C:\\Users\\demg\\OneDrive - Department for Education\\Documents\\Timetabling\\{year}"
+main_path_desktop     = f"C:\\Users\\xxx\\OneDrive - Department for Education\\Documents\\Timetabling\\{year}"
 
 # Check if the path exists and set the file path, make it easier to switch between locations.
 try:
