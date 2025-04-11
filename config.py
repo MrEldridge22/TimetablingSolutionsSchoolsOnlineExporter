@@ -1,11 +1,15 @@
 import datetime
 from pathlib import Path
+import sys
 
 ### Configuration File ###
 # This file contains the configuration for the script, including file paths and other settings related to your school
 
 # Year Creation and Open File
 year = datetime.date.today().year
+
+# School Contact Number
+schoolNumber = 245
 
 """ File Paths """
 # School
@@ -41,10 +45,6 @@ else:
     Path("schools_online_import_files").mkdir()
 
 # Semester & Term file names
-seniors_sfx_file    = f"\\{year} Year SeniorSchool Students.sfx"
-swd_sfx_file        = f"\\{year} Year SWD Students.sfx"
 semester1_tfx_file  = f"\\TTD_{year}_S1.tfx"
 semester2_tfx_file  = f"\\TTD_{year}_S2.tfx"
 
-# School Contact Number
-schoolNumber = 245
