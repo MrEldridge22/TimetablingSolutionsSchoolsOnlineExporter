@@ -1,0 +1,5 @@
+*.xlsx
+*.csv
+*.pyc
+schools_online_import_files/
+.venv/
