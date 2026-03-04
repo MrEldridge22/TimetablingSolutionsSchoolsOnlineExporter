@@ -124,7 +124,7 @@ def get_enrollments(tfx_file, semester, swd=False):
 
 
     student_enrollments_df.insert(0, "Contact School Number", config.schoolNumber)
-    student_enrollments_df.insert(8,
+    student_enrollments_df.insert(9,
                               "Results Due",
                               student_enrollments_df.apply(
                                 lambda row: (
@@ -136,7 +136,7 @@ def get_enrollments(tfx_file, semester, swd=False):
                                 axis=1
                                 )
     )
-    student_enrollments_df.insert(12, "Class Number", generate_class_number(student_enrollments_df)["Sequence"])
+    student_enrollments_df.insert(13, "Class Number", generate_class_number(student_enrollments_df)["Sequence"])
     student_enrollments_df.rename(columns={"ClassCode": "School Class Code"}, inplace=True)
 
     student_enrollments_df.drop(columns=["Sequence"], axis=1, inplace=True)
